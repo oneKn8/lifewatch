@@ -131,6 +131,9 @@ Checked directly rather than assumed, because the whole design rests on them.
 | Network | SSID readable via `iwgetid -r` | `network` sensor needs no permissions, no GPS, no battery cost |
 | Cameras | `/dev/video0`, `/dev/video1` | `presence` sensor viable |
 | Displays | `eDP-1` 1920x1200 active; **`HDMI-1` connected-ready, currently free** | Wall display needs one cable, no extra hardware |
+| GPU | **Integrated Intel Iris Xe only**, no discrete GPU, no CUDA | Local inference is CPU-bound |
+| CPU / RAM | i7-1255U (15W U-series, 2 P-cores + 8 E-cores), 23 GiB | Local classifier must be 3B-class; a 7B would peg the machine the user is studying on |
+| Local runtime | **Ollama not installed** | Stage 1 must install it or fall back to Tier-3 asking (§17.1) |
 
 **Correction on record:** an earlier session note treated `ATT-WIFI-7600` as the home
 network. It is not; it was observed while the user was away from home. No SSID is written
@@ -179,10 +182,30 @@ title against the active commitment. A lecture series and an entertainment video
 trivially distinguishable by title; this is what a model is good at and what a hardcoded
 blocklist is bad at.
 
-Backend is pluggable. Default is a **local** model (Ollama), for three reasons: it is
-free, it works offline, and it keeps window titles on the machine. A cloud backend is
-available and **off by default**; enabling it sends ambiguous titles off-machine and the
-wizard says so in those words.
+Backend is pluggable, and the split is drawn by **what data leaves the machine**, not by
+user preference.
+
+**Tier 2 runs local, always.** Its input is raw window titles — documents, URLs,
+everything the user looks at — which is the most sensitive data the system holds and the
+one thing that must not be transmitted. It is also the highest-volume call path.
+
+Model size is constrained by the host (§5): CPU-only inference on a 15W part means a
+**3B-class model**, not a 7B. The task is near-trivial classification against a short
+prompt, so a small model is sufficient, and a large one would put the fans up on the same
+laptop the user is trying to study on — actively harming the goal.
+
+A cloud backend for Tier 2 exists and is **off by default**; enabling it transmits
+ambiguous titles off-machine, and the wizard says so in those words.
+
+**Watcher judgment (§9.3) may use a BYOK cloud model, opt-in.** It is a few calls per day
+and needs genuine contextual reasoning, which is where small local models are weakest. Its
+input is strictly **derived state** — dead block counts, idle minutes, sleep duration,
+passes remaining, integrity ratio — and never a window title, URL, or any raw
+observation. That payload is cheap and non-identifying, so the privacy boundary holds.
+
+Consequence for the open-source posture (§15): the mandatory path is entirely local. The
+project clones, runs, and works with no account and no key. BYOK is an opt-in upgrade to a
+single component.
 
 ### Tier 3 — ask, then learn
 
@@ -435,9 +458,11 @@ interface.
 
 ## 17. Open questions
 
-1. **Classifier backend availability.** Local model presence on the target machine is
-   unverified. Confirm before Stage 1; if absent, Tier 2 degrades to Tier 3 (ask the
-   user) rather than blocking, and the tier ordering already permits this.
+1. ~~**Classifier backend availability.**~~ **Resolved 2026-08-15:** no local runtime is
+   installed (§5). Stage 1 installs one and pulls a 3B-class model. Remaining unknown is
+   measured latency and thermal behaviour under real study conditions — if a background
+   classification is noticeable while the user is working, Tier 2 falls back to Tier-3
+   asking, which ships in Stage 1 regardless.
 2. **Wall display power behaviour.** Whether the TV will be driven continuously by the
    docked laptop or wake on escalation is a usage decision, deferred until the panel is
    physically connected.
