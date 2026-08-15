@@ -29,6 +29,7 @@ silent sensor loop costs the record its detail and costs the user nothing.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -70,6 +71,10 @@ class Classifier:
     ) -> None:
         self.config = config
         self.ask_queue = ask_queue
+        # End of the last interval this classifier recorded. Intervals tile, so
+        # a new one may never start before it. Recovered from the store on first
+        # use so a restart cannot reopen a span that was already closed.
+        self._last_end: datetime | None = None
         self.judge = judge if judge is not None else local_judge(config)
         settings = config.classifier or {}
         self.staleness_s = int(
@@ -83,13 +88,30 @@ class Classifier:
         observations: Sequence[Observation],
         block: Any,
         now: datetime,
+        since: datetime | None = None,
     ) -> Interval:
         """Decide what the moment ``now`` was, using evidence that is still current.
 
         Always returns an ``Interval``. Where the tiers cannot decide, that
         interval is UNKNOWN and says so, because a classifier that returned
         nothing would leave the caller to invent a class of its own.
+
+        Intervals TILE time; they must never overlap. The tiers anchor a verdict
+        at the observation that justifies it, which is the right answer to "when
+        did this become true" and the wrong answer to "what span does this
+        record cover". Because the runner suppresses unchanged values, the same
+        observation is the evidence on every tick until the next heartbeat, so
+        anchoring the record there re-counts the same minutes once per tick:
+        measured at 55 minutes recorded for 10 minutes elapsed. The integrity
+        ratio in spec section 3.1 divides by claimed minutes, so an inflated
+        numerator does not read as a bug, it reads as a good day.
+
+        ``since`` is the end of the previously recorded interval. The caller may
+        pass it; otherwise it is remembered across calls and recovered from the
+        store on the first call, so a restart cannot reopen a closed span.
         """
+        floor = self._tile_floor(since, now)
+
         current = self._current(observations, now)
 
         verdict = tier1(
@@ -100,50 +122,54 @@ class Classifier:
             idle_threshold_s=self.config.idle_threshold_s,
         )
         if verdict is not None:
-            return verdict
+            return self._tiled(verdict, floor, now)
 
         if block is None:
             # Unclaimed time is already the loudest thing on the grid (spec
             # section 13.3). Asking about it would train the user to dismiss
             # questions, and there is no commitment to judge a title against.
-            return self._undecided(
+            return self._tiled(self._undecided(
                 now, "nothing was declared for this time, so there is nothing "
                 "to judge a window against"
-            )
+            ), floor, now)
 
         focused = self._focused_title(current)
         if focused is None:
-            return self._undecided(
+            return self._tiled(self._undecided(
                 now,
                 f"no window title observed in the last {self.staleness_s} s",
-            )
+            ), floor, now)
 
         label = self._commitment_label(block)
         if not label:
-            return self._undecided(
+            return self._tiled(self._undecided(
                 now, "the current block names no commitment to judge against"
-            )
+            ), floor, now)
 
         title, seen_at = focused
         start = self._no_earlier_than_the_block(seen_at, block, now)
 
         verdict = tier2(title, label, self.judge, start=start, end=now)
         if verdict is not None:
-            return verdict
+            return self._tiled(verdict, floor, now)
 
         # Nothing mechanical applied and the model would not commit, so the only
         # honest source left is the person. One question per title while it is
         # pending; the ask queue enforces that, not this loop.
         self.ask_queue.enqueue(title, block_id=getattr(block, "id", None), now=now)
-        return Interval(
-            start=start,
-            end=now,
-            klass=Klass.UNKNOWN,
-            tier=TIER_ASK,
-            reason=(
-                "no rule and no model could settle the focused window; "
-                "asked the user"
+        return self._tiled(
+            Interval(
+                start=start,
+                end=now,
+                klass=Klass.UNKNOWN,
+                tier=TIER_ASK,
+                reason=(
+                    "no rule and no model could settle the focused window; "
+                    "asked the user"
+                ),
             ),
+            floor,
+            now,
         )
 
     # -- evidence ---------------------------------------------------------
@@ -229,6 +255,55 @@ class Classifier:
             reason=reason,
         )
 
+
+    # -- tiling -------------------------------------------------------------
+
+    def _tile_floor(self, since: datetime | None, now: datetime) -> datetime | None:
+        """The earliest instant a new interval is allowed to start."""
+        if since is not None:
+            self._last_end = max(self._last_end or since, since)
+        elif self._last_end is None:
+            self._last_end = self._recover_last_end()
+        floor = self._last_end
+        if floor is not None and floor > now:
+            # The clock went backwards, or a caller replayed an older moment.
+            # Trust the record rather than reopening a closed span.
+            return now
+        return floor
+
+    def _recover_last_end(self) -> datetime | None:
+        """Where the stored record leaves off, if the store can say."""
+        store = getattr(self.ask_queue, "store", None)
+        conn = getattr(store, "conn", None)
+        if conn is None:
+            return None
+        try:
+            row = conn.execute("SELECT MAX(end) FROM intervals").fetchone()
+        except Exception:
+            return None
+        if not row or not row[0]:
+            return None
+        try:
+            return datetime.fromisoformat(row[0])
+        except ValueError:
+            return None
+
+    def _tiled(self, interval: Interval, floor: datetime | None, now: datetime) -> Interval:
+        """Clamp an interval so it starts no earlier than the last one ended.
+
+        The tier's own start is kept when it is later than the floor, because a
+        verdict that only became true part-way through the gap should not claim
+        the whole gap.
+        """
+        start = interval.start
+        if floor is not None and start < floor:
+            start = floor
+        if start > interval.end:
+            start = interval.end
+        self._last_end = max(self._last_end or interval.end, interval.end, now)
+        if start == interval.start:
+            return interval
+        return replace(interval, start=start)
 
 __all__ = [
     "Classifier",
