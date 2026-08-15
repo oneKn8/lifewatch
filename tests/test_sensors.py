@@ -127,7 +127,7 @@ def test_the_reader_parses_a_title_and_the_application_class(monkeypatch):
         'WM_NAME(COMPOUND_TEXT) = "Test Document Title"\n'
         'WM_CLASS(STRING) = "test-instance", "TestClass"\n'
     )))
-    assert window.read_active_window() == ("TestClass", "Test Document Title")
+    assert window.read_active_window() == ("TestClass", "Test Document Title", None)
 
 
 def test_the_reader_prefers_the_class_over_the_instance(monkeypatch):
@@ -145,7 +145,7 @@ def test_the_reader_falls_back_to_wm_name_on_older_applications(monkeypatch):
         'WM_NAME(STRING) = "Old Test Application"\n'
         'WM_CLASS(STRING) = "test-instance", "TestClass"\n'
     )))
-    assert window.read_active_window() == ("TestClass", "Old Test Application")
+    assert window.read_active_window() == ("TestClass", "Old Test Application", None)
 
 
 def test_the_reader_survives_a_title_containing_quotes(monkeypatch):

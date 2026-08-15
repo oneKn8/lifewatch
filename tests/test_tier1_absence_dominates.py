@@ -21,8 +21,8 @@ T0 = datetime(2026, 8, 24, 7, 0, 0)
 THRESHOLD_S = 900
 
 
-def obs(kind, value, sensor="window", offset=0):
-    return Observation(T0 + timedelta(seconds=offset), sensor, kind, value, {})
+def obs(kind, value, sensor="window", offset=0, meta=None):
+    return Observation(T0 + timedelta(seconds=offset), sensor, kind, value, meta or {})
 
 
 def test_media_playing_with_no_input_for_forty_minutes_is_absent_not_ambient():
@@ -42,8 +42,8 @@ def test_media_playing_with_no_input_for_forty_minutes_is_absent_not_ambient():
 def test_media_playing_with_recent_input_is_still_ambient():
     """The ambient rule must survive the fix, or study music becomes a crime."""
     observations = [
-        obs("focus", "TestEditor|problem-set.pdf"),
-        obs("media", "playing"),
+        obs("focus", "TestEditor|problem-set.pdf", meta={"pid": 1111}),
+        obs("media", "playing", meta={"pid": 4750}),
         obs("ms", "30000", sensor="idle"),
     ]
     result = tier1(observations, block=object(), now=T0 + timedelta(minutes=5),

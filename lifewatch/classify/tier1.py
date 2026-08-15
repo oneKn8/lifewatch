@@ -167,20 +167,83 @@ def _background_media(
     if not focused_app:
         return None
 
-    source = media.meta.get("app") or media.meta.get("wm_class")
-    if source and source.strip().lower() == focused_app.strip().lower():
-        return None  # the player is the focused window: a Tier 2 candidate
+    # Is the thing playing the same thing that has focus?
+    #
+    # Names cannot answer this. MPRIS and X11 are different namespaces for the
+    # same machine: the browser on the target host publishes MPRIS as
+    # "chromium" and sets WM_CLASS to "Google-chrome". A case-insensitive string
+    # compare between them never matches, so every full-screen video in the
+    # focused browser was credited as background listening -- an exoneration of
+    # exactly the behaviour this rule exists to catch.
+    #
+    # Process identity crosses both namespaces exactly. The media sensor records
+    # the publishing process, the window sensor records the focused window's
+    # process, and a match either way through the ancestry answers the question
+    # without guessing. Browsers publish MPRIS from a child of the process that
+    # owns the window, so a plain equality test is not enough.
+    media_pid = _pid_of(media)
+    focus_pid = _pid_of(focus)
+    if media_pid is not None and focus_pid is not None:
+        if _same_process_tree(media_pid, focus_pid):
+            return None  # the player IS the focused window: a Tier 2 candidate
+        attribution = f"pid {media_pid}"
+    else:
+        # Attribution failed. Decline rather than credit: an unproven claim of
+        # background listening is the same mistake as the name comparison, and
+        # declining sends the title to Tier 2 instead of clearing it here.
+        return None
 
     # Both facts only hold together from the later of the two observations.
     start = max(media.ts, focus.ts)
-    if source:
-        reason = f"media playing in '{source}' while '{focused_app}' has focus"
-    else:
-        reason = (
-            f"media playing while '{focused_app}' has focus "
-            "(media source unattributed)"
-        )
+    reason = f"media playing in another process ({attribution}) while '{focused_app}' has focus"
     return (Klass.AMBIENT, start, reason)
+
+
+def _pid_of(observation: Observation) -> int | None:
+    raw = observation.meta.get("pid")
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _same_process_tree(a: int, b: int, reader: Any = None) -> bool:
+    """True when one pid is the other, or an ancestor of the other.
+
+    Chromium publishes MPRIS from a renderer child while the window belongs to
+    the browser process, so equality alone would report two different
+    applications. Walking parents is bounded and cheap: ancestry is shallow and
+    the loop stops at init.
+    """
+    if a == b:
+        return True
+    ppid = reader or _parent_pid
+    for child, ancestor in ((a, b), (b, a)):
+        seen = 0
+        while child > 1 and seen < _MAX_ANCESTRY_DEPTH:
+            child = ppid(child) or 0
+            if child == ancestor:
+                return True
+            seen += 1
+    return False
+
+
+_MAX_ANCESTRY_DEPTH = 12
+
+
+def _parent_pid(pid: int) -> int | None:
+    """Read a process's parent from /proc, or None if it is gone.
+
+    A vanished process is not an error: the player may have exited between the
+    observation and the classification.
+    """
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as handle:
+            fields = handle.read().rsplit(")", 1)[-1].split()
+        return int(fields[1])
+    except (OSError, IndexError, ValueError):
+        return None
 
 
 def _application_of(focus_value: str) -> str:

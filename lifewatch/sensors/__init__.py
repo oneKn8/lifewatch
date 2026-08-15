@@ -21,14 +21,44 @@ rather than failing. A machine with no wireless is not a broken installation.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, Sequence, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, Sequence, runtime_checkable
 
 from lifewatch.models import Observation
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle avoidance, typing only
     from lifewatch.config import Config
 
-__all__ = ["Sensor", "FakeSensor", "default_sensors"]
+__all__ = [
+    "Sensor",
+    "FakeSensor",
+    "default_sensors",
+    "IdleSensor",
+    "MediaSensor",
+    "NetworkSensor",
+    "WindowSensor",
+]
+
+# Where each sensor class actually lives. Reaching them through this table
+# rather than importing them at the top keeps the promise in the docstring
+# above: importing this package must not import a sensor the caller was never
+# going to use. It is not hypothetical -- the Stage 2 presence sensor imports a
+# camera library, and every unit that imports a Sensor type would then need one.
+_SENSOR_MODULES = {
+    "IdleSensor": "lifewatch.sensors.idle",
+    "MediaSensor": "lifewatch.sensors.media",
+    "NetworkSensor": "lifewatch.sensors.network",
+    "WindowSensor": "lifewatch.sensors.window",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a sensor class on first use (PEP 562)."""
+    module_path = _SENSOR_MODULES.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    return getattr(import_module(module_path), name)
 
 
 @runtime_checkable
@@ -87,17 +117,22 @@ class FakeSensor:
 
 
 def default_sensors(config: "Config") -> list[Sensor]:
-    """The three Stage 1 sensors, wired to their real OS readers.
+    """The four Stage 1 sensors, wired to their real OS readers.
 
     Imports live inside the function so that ``import lifewatch.sensors`` costs
     nothing and cannot fail on a machine missing an optional dependency of a
     sensor the caller was never going to use.
 
+    ``window`` and ``media`` are listed adjacently because Tier 1's most
+    valuable rule reads them as a pair, and a machine that can answer one and
+    not the other loses that rule rather than degrading quietly.
+
     The ``presence`` sensor is deliberately absent: it is Stage 2, and it is the
     only sensor that touches a camera.
     """
     from lifewatch.sensors.idle import IdleSensor
+    from lifewatch.sensors.media import MediaSensor
     from lifewatch.sensors.network import NetworkSensor
     from lifewatch.sensors.window import WindowSensor
 
-    return [WindowSensor(), IdleSensor(), NetworkSensor(config)]
+    return [WindowSensor(), MediaSensor(), IdleSensor(), NetworkSensor(config)]

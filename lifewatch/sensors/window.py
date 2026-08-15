@@ -92,7 +92,7 @@ def read_active_window() -> Optional[Tuple[str, str]]:
     # Tolerated: the focused window can vanish between the two calls, and a
     # window that no longer exists is a race, not a broken display server.
     props = _xprop(
-        ["-id", window_id, "_NET_WM_NAME", "WM_NAME", "WM_CLASS"],
+        ["-id", window_id, "_NET_WM_NAME", "WM_NAME", "WM_CLASS", "_NET_WM_PID"],
         tolerate_failure=True,
     )
     if props is None:
@@ -105,9 +105,32 @@ def read_active_window() -> Optional[Tuple[str, str]]:
     classes = _quoted_values(props, "WM_CLASS")
     wm_class = classes[-1] if classes else ""
 
+    # The owning process, so Tier 1 can tell whether a playing media source is
+    # this very window. Read in the same xprop call as everything else, so it
+    # costs no extra subprocess on the highest-frequency loop in the system.
+    pid = _cardinal(props, "_NET_WM_PID")
+
     if not title and not wm_class:
         return None
-    return (wm_class, title)
+    return (wm_class, title, pid)
+
+
+def _cardinal(props: str, name: str) -> int | None:
+    """An integer xprop CARDINAL, or None when absent or unparseable.
+
+    Applications are not obliged to set _NET_WM_PID, and a remote X client's pid
+    would be meaningless locally anyway. Absence is normal, not an error.
+    """
+    for line in props.splitlines():
+        if not line.startswith(name):
+            continue
+        _, _, value = line.partition("=")
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
 
 
 class WindowSensor:
@@ -145,13 +168,28 @@ class WindowSensor:
         focused = self.reader()
         if focused is None:
             return []
-        wm_class, title = focused
+
+        # A reader may answer (wm_class, title) or (wm_class, title, pid). The
+        # pid is what lets Tier 1 decide whether a playing media source IS this
+        # window: MPRIS bus names and X11 window classes are different
+        # namespaces, so comparing them as strings never matches, while process
+        # ancestry crosses both exactly. Two-element readers stay valid because
+        # a Wayland or macOS contributor may have no pid to offer, and the
+        # classifier declines to attribute rather than guessing when it is
+        # absent.
+        wm_class, title, pid = (
+            (*focused, None) if len(focused) == 2 else focused
+        )
+
+        meta = {"wm_class": wm_class, "title": title}
+        if pid is not None:
+            meta["pid"] = pid
         return [
             Observation(
                 ts=now,
                 sensor=self.name,
                 kind="focus",
                 value=f"{wm_class}|{title}",
-                meta={"wm_class": wm_class, "title": title},
+                meta=meta,
             )
         ]
