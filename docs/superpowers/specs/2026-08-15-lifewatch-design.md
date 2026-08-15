@@ -146,7 +146,17 @@ into source or config defaults. Places are learned at runtime (§10).
 | `window` | What application and document has focus | `_NET_ACTIVE_WINDOW` → `_NET_WM_NAME`, `WM_CLASS` | 1 |
 | `idle` | How long since any keyboard or mouse input | XScreenSaver `XScreenSaverQueryInfo` | 1 |
 | `network` | Which known place is this | SSID matched against learned places | 1 |
+| `media` | Is something playing | MPRIS `PlaybackStatus` over `busctl --user` | 1 |
 | `presence` | Is the work seat occupied | Camera frame → person-in-region boolean (§12) | 2 |
+
+**`media` was added 2026-08-15**, after an initial build revealed the gap: §7.1 names the
+background-media rule the highest-value rule in the classifier, and nothing produced the
+observation it consumes, leaving it unreachable in production.
+
+It answers exactly one question — *is something playing* — and emits one of four state
+words. MPRIS also exposes track title, artist, and URL on the same interface. **None of it
+is read, stored, or emitted.** The identity of what is playing is not needed to detect
+background listening, so collecting it would be data taken for no purpose.
 
 Poll interval 15s for `window` and `idle`, 60s for `network`, 60s for `presence`.
 Observations are written only on change plus a heartbeat, so the log stays small.
@@ -174,6 +184,22 @@ classification at all.
 
 Also mechanical: idle beyond threshold plus no desk presence during a block → `absent`.
 Calendar-declared class or work time → `accounted`.
+
+**Rule order is load-bearing, and absence must outrank background media.** The ambient
+reading — "listening while working" — is only valid while there is evidence of working.
+Sustained zero input is evidence of the opposite, and it dominates: media playing to an
+empty chair is absence, not ambience.
+
+This was built in the wrong order first, and the resulting behaviour is worth recording,
+because it is the exact inversion this project exists to prevent:
+
+    observations: focused editor, media playing, 40 minutes of zero input, inside a block
+    verdict:      AMBIENT
+    reason:       media playing while 'TestEditor' has focus
+
+Lying in bed with a video running, scored as a productive session with background music.
+Correct order is **accounted → absent → background media → none**, pinned by
+`tests/test_tier1_absence_dominates.py`.
 
 ### Tier 2 — judgment
 

@@ -301,7 +301,7 @@ record, and a system whose job is honesty must not be able to revise it."
 - Consumes: `Observation` (Task 2), `Config` (Task 1)
 - Produces:
   - `Sensor` protocol: `name: str`, `poll_interval_s: int`, `available() -> bool`, `poll(now: datetime) -> list[Observation]`
-  - `WindowSensor(runner=subprocess_runner)` emitting `kind="focus"`, `value=f"{wm_class}|{title}"`
+  - `WindowSensor(reader=read_active_window)` emitting `kind="focus"`, `value=f"{wm_class}|{title}"`
   - `IdleSensor(reader=xss_reader)` emitting `kind="ms"`, `value=str(idle_ms)`
   - `NetworkSensor(config, reader=ssid_reader)` emitting `kind="place"`, `value=place_name_or_unknown`
   - `FakeSensor(name, scripted: list[Observation])` for tests
