@@ -1,0 +1,342 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>lifewatch</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!--
+  The wall.
+
+  Read from across a room, in about a second, by someone who did not choose to
+  look at it. Every decision here follows from that and from the panel it runs
+  on: a 2011 720p television with a tired backlight and poor viewing angles.
+
+    - Pure black ground and near-pure foregrounds. Subtle greys disappear on
+      this panel at an angle, so there are none.
+    - Nothing below weight 700, nothing below 20px, no opacity on text.
+    - No cards, no rounded containers, no gradients, no glow, no blur. This is
+      an instrument panel, not an application window.
+    - No interaction of any kind. The phone is the control surface.
+
+  The one moving thing is the grid, and its motion is earned: those cells are
+  really filling, in real time, whether or not anyone is looking. That is the
+  entire reason this exists rather than a dashboard that waits to be opened.
+-->
+<style>
+  :root {
+    --ground:    #000000;
+    --banked:    #F4F1EA;  /* bone, warm rather than clinical */
+    --gone:      #D22B2B;  /* signal red, survives a tired backlight */
+    --accounted: #55504A;
+    --pending:   #14120F;
+    --rule:      #2A2621;
+    --dim:       #8A837A;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--ground);
+    color: var(--banked);
+    font-family: "Inter", "Roboto", "Fira Sans", system-ui, "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  body {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 12px;
+    padding: 20px 30px 16px;
+  }
+
+  /* -- header ------------------------------------------------------------ */
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 2px solid var(--rule);
+    padding-bottom: 10px;
+  }
+  #running {
+    font-size: 30px;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+  }
+  #running.idle { color: var(--dim); }
+  #clock { font-size: 30px; color: var(--dim); }
+
+  /* -- the three numbers -------------------------------------------------- */
+
+  #numbers {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 30px;
+  }
+  .stat { display: flex; flex-direction: column; }
+  .stat .label {
+    font-size: 21px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 2px;
+  }
+  .stat .value {
+    font-size: 96px;
+    line-height: 0.92;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+  .stat .unit { font-size: 40px; font-weight: 700; color: var(--dim); }
+  #gone .value { color: var(--gone); }
+
+  /* -- grid --------------------------------------------------------------- */
+
+  #gridwrap { display: flex; flex-direction: column; min-height: 0; }
+  #gridlabel {
+    font-size: 19px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+  canvas { display: block; width: 100%; image-rendering: pixelated; }
+
+  /* -- footer ------------------------------------------------------------- */
+
+  footer { border-top: 2px solid var(--rule); padding-top: 10px; }
+  #chain { font-size: 23px; line-height: 1.35; color: var(--banked); }
+  #chain span { color: var(--dim); }
+  #chain span::after { content: "  ->  "; color: var(--rule); }
+  #chain span:last-child::after { content: ""; }
+
+  /* -- escalation ---------------------------------------------------------
+     Rung 1 is the wall's own rung. It must be unmistakable from a bed across
+     a dark room, which means a state change to the whole surface, not a badge
+     in a corner. It does not blink: a blinking screen is ignored within a
+     week, and the point is to be looked at in week twelve.                  */
+
+  body.rung1 { box-shadow: inset 0 0 0 8px var(--gone); }
+  body.rung2 { box-shadow: inset 0 0 0 16px var(--gone); }
+  #alert { display: none; }
+  body.rung1 #alert, body.rung2 #alert { display: block; }
+  #alert {
+    border-top: 2px solid var(--gone);
+    padding-top: 10px;
+    margin-top: 8px;
+  }
+  #alert .what { font-size: 27px; color: var(--gone); text-transform: uppercase;
+                 letter-spacing: 0.06em; }
+  #alert .do   { font-size: 34px; font-weight: 800; margin-top: 2px; }
+
+  #silenced {
+    display: none;
+    font-size: 21px;
+    color: var(--dim);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  body.silenced #silenced { display: block; }
+  body.silenced { box-shadow: none !important; }
+  body.silenced #alert { display: none !important; }
+</style>
+
+<header>
+  <div id="running" class="idle">nothing running</div>
+  <div id="clock">--:--</div>
+</header>
+
+<section id="numbers">
+  <div class="stat" id="banked">
+    <div class="label">banked today</div>
+    <div class="value">0<span class="unit">m</span></div>
+  </div>
+  <div class="stat" id="gone">
+    <div class="label">gone today</div>
+    <div class="value">0<span class="unit">m</span></div>
+  </div>
+  <div class="stat" id="left">
+    <div class="label">passes left</div>
+    <div class="value">0</div>
+  </div>
+</section>
+
+<div id="gridwrap">
+  <div id="gridlabel"><span>the term, one cell per waking hour</span><span id="gridstat"></span></div>
+  <canvas id="grid"></canvas>
+</div>
+
+<footer>
+  <div id="chain"></div>
+  <div id="silenced">sick mode &mdash; escalation silent</div>
+  <div id="alert">
+    <div class="what" id="alertwhat"></div>
+    <div class="do" id="alertdo"></div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  "use strict";
+
+  const COLORS = {
+    aligned:   "#F4F1EA",
+    ambient:   "#9A948B",
+    accounted: "#55504A",
+    drift:     "#7A2020",
+    absent:    "#D22B2B",
+    gone:      "#D22B2B",
+    unknown:   "#3A352F",
+    pending:   "#14120F",
+  };
+
+  // The term. Read from the served config later; for now the grid simply
+  // renders whatever range it is given and the range is the current term.
+  const TERM_START = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const TERM_WEEKS = 16;
+
+  const canvas = document.getElementById("grid");
+  const ctx = canvas.getContext("2d");
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  function hoursText(minutes) {
+    if (minutes < 60) return [String(minutes), "m"];
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0 ? [String(h), "h"] : [h + "." + Math.round(m / 6), "h"];
+  }
+
+  function setStat(id, minutes) {
+    const [value, unit] = hoursText(minutes);
+    document.querySelector("#" + id + " .value").innerHTML =
+      value + '<span class="unit">' + unit + "</span>";
+  }
+
+  async function json(url) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(url + " -> " + response.status);
+    return response.json();
+  }
+
+  function drawGrid(cells) {
+    if (!cells.length) return;
+    // Columns are days, rows are hours of the day. The term becomes one object
+    // with a fixed size that visibly consumes itself.
+    const byDay = new Map();
+    let minHour = 24, maxHour = 0;
+    for (const cell of cells) {
+      const at = new Date(cell.hour);
+      const day = at.toISOString().slice(0, 10);
+      if (!byDay.has(day)) byDay.set(day, new Map());
+      byDay.get(day).set(at.getHours(), cell.klass);
+      minHour = Math.min(minHour, at.getHours());
+      maxHour = Math.max(maxHour, at.getHours());
+    }
+    const days = [...byDay.keys()].sort();
+    const rows = maxHour - minHour + 1;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const cellW = Math.max(3, Math.floor(width / days.length));
+    // Fill the height actually available rather than a fixed guess. On a wall
+    // panel read from across a room the grid must read as a mass, and a mass
+    // needs area; a 250px strip in the middle of a 720p screen reads as a
+    // decoration instead of as the term.
+    const room = document.getElementById("gridwrap").clientHeight
+               - document.getElementById("gridlabel").offsetHeight - 10;
+    const cellH = Math.max(6, Math.floor(room / rows));
+    const height = cellH * rows;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.height = height + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    days.forEach((day, x) => {
+      const hours = byDay.get(day);
+      for (let h = minHour; h <= maxHour; h++) {
+        const klass = hours.get(h) || "pending";
+        ctx.fillStyle = COLORS[klass] || COLORS.unknown;
+        // One pixel of ground between cells, so the grid reads as discrete
+        // hours rather than a smear, even at four pixels wide.
+        ctx.fillRect(x * cellW, (h - minHour) * cellH, cellW - 1, cellH - 1);
+      }
+    });
+
+    // Where we are in the term. Without this the grid says how much is spent
+    // but not how much is left, and how much is left is the whole point.
+    const today = new Date().toISOString().slice(0, 10);
+    const todayIndex = days.indexOf(today);
+    if (todayIndex >= 0) {
+      ctx.fillStyle = "#F4F1EA";
+      ctx.fillRect(todayIndex * cellW, 0, 2, height);
+    }
+
+    const lost = cells.filter((c) => c.klass === "gone" || c.klass === "absent").length;
+    const done = cells.filter((c) => c.klass === "aligned" || c.klass === "ambient").length;
+    document.getElementById("gridstat").textContent = done + " kept / " + lost + " lost";
+  }
+
+  async function refresh() {
+    try {
+      const state = await json("/api/state");
+      const now = new Date(state.now);
+
+      document.getElementById("clock").textContent =
+        pad(now.getHours()) + ":" + pad(now.getMinutes());
+
+      const running = document.getElementById("running");
+      if (state.current_block) {
+        const b = state.current_block;
+        running.textContent = b.commitment_id + " — " + b.state;
+        running.classList.toggle("idle", b.state !== "running");
+      } else {
+        running.textContent = "nothing running";
+        running.classList.add("idle");
+      }
+
+      setStat("banked", state.banked_minutes);
+      setStat("gone", state.gone_minutes);
+      document.querySelector("#left .value").textContent = state.passes_remaining;
+
+      document.body.classList.toggle("silenced", !!state.silenced);
+      document.body.classList.toggle("rung1", state.rung === 1);
+      document.body.classList.toggle("rung2", state.rung >= 2);
+      if (state.rung > 0) {
+        document.getElementById("alertwhat").textContent = state.message || "block not started";
+        document.getElementById("alertdo").textContent = state.next_action || "";
+      }
+
+      const chain = document.getElementById("chain");
+      chain.innerHTML = "";
+      for (const link of state.consequence_chain || []) {
+        const span = document.createElement("span");
+        span.textContent = link;
+        chain.appendChild(span);
+      }
+
+      const start = new Date(TERM_START);
+      const end = new Date(start);
+      end.setDate(end.getDate() + TERM_WEEKS * 7);
+      drawGrid(await json(
+        "/api/grid?start=" + start.toISOString().slice(0, 19) +
+        "&end=" + end.toISOString().slice(0, 19)));
+    } catch (err) {
+      // A wall that goes blank on a transient error is worse than a wall
+      // showing a slightly stale number, so the last good paint stays up.
+      document.getElementById("clock").textContent = "--:--";
+      console.error(err);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 15000);
+  window.addEventListener("resize", refresh);
+})();
+</script>

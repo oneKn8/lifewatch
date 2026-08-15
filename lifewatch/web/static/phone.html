@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>lifewatch</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0E0D0B">
+<!--
+  The phone: the control surface.
+
+  Held in one hand, often in the dark, often by someone who does not want to be
+  using it. So: few controls, large targets, and the destructive-looking one
+  (move) asks for a destination rather than offering an escape.
+
+  There is no dismiss button, because there is no dismiss route. The exits are
+  start, complete, move, pass and sick.
+-->
+<style>
+  :root {
+    --ground: #0E0D0B;
+    --raised: #191713;
+    --ink:    #F4F1EA;
+    --dim:    #8A837A;
+    --gone:   #D22B2B;
+    --keep:   #6FA36B;
+    --rule:   #2A2621;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Inter", "Roboto", system-ui, "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    padding: 20px 18px calc(28px + env(safe-area-inset-bottom));
+    max-width: 620px;
+    margin: 0 auto;
+    line-height: 1.4;
+  }
+  h1 {
+    font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--dim); font-weight: 700; margin-bottom: 18px;
+  }
+  .row { display: flex; gap: 12px; }
+  .stat { flex: 1; background: var(--raised); border: 1px solid var(--rule); padding: 12px 14px; }
+  .stat .k { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+  .stat .v { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+  #goneStat .v { color: var(--gone); }
+
+  #block {
+    margin: 18px 0 14px; padding: 16px; background: var(--raised);
+    border: 1px solid var(--rule);
+  }
+  #blockName { font-size: 21px; font-weight: 800; }
+  #blockWhen { font-size: 14px; color: var(--dim); margin-top: 3px; }
+
+  button {
+    font: inherit; font-weight: 700; color: var(--ink); background: var(--raised);
+    border: 1px solid var(--rule); padding: 16px 12px; width: 100%;
+    font-size: 16px; letter-spacing: 0.04em; cursor: pointer;
+  }
+  button:active { background: #23201B; }
+  button.primary { background: var(--keep); color: #0E0D0B; border-color: var(--keep); }
+  button.warn { color: var(--gone); border-color: #4A2020; }
+  button[disabled] { opacity: 0.35; }
+  .stack { display: grid; gap: 10px; margin-top: 14px; }
+
+  #alert { display: none; border: 2px solid var(--gone); padding: 14px; margin-bottom: 16px; }
+  #alert.on { display: block; }
+  #alert .w { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gone); }
+  #alert .d { font-size: 19px; font-weight: 800; margin-top: 6px; }
+
+  #ask { display: none; border: 1px solid var(--rule); padding: 14px; margin-top: 18px; background: var(--raised); }
+  #ask.on { display: block; }
+  #ask .q { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dim); }
+  #ask .t { font-size: 17px; font-weight: 700; margin: 8px 0 12px; word-break: break-word; }
+
+  #move { display: none; margin-top: 14px; }
+  #move.on { display: block; }
+  #move label { display: block; font-size: 12px; letter-spacing: 0.14em;
+                text-transform: uppercase; color: var(--dim); margin: 10px 0 4px; }
+  #move input {
+    font: inherit; width: 100%; padding: 12px; background: var(--ground);
+    color: var(--ink); border: 1px solid var(--rule);
+  }
+  #note { font-size: 13px; color: var(--dim); margin-top: 20px; }
+</style>
+
+<h1>lifewatch</h1>
+
+<div id="alert">
+  <div class="w" id="alertWhat"></div>
+  <div class="d" id="alertDo"></div>
+</div>
+
+<div class="row">
+  <div class="stat"><div class="k">banked</div><div class="v" id="banked">0m</div></div>
+  <div class="stat" id="goneStat"><div class="k">gone</div><div class="v" id="gone">0m</div></div>
+  <div class="stat"><div class="k">passes</div><div class="v" id="passes">0</div></div>
+</div>
+
+<div id="block">
+  <div id="blockName">nothing scheduled</div>
+  <div id="blockWhen">&mdash;</div>
+</div>
+
+<div class="stack">
+  <button id="startBtn" class="primary">start</button>
+  <button id="doneBtn">complete</button>
+  <button id="moveBtn" class="warn">move it &mdash; name the new slot</button>
+  <button id="passBtn" class="warn">use a pass</button>
+  <button id="sickBtn">sick, silence 24h</button>
+</div>
+
+<div id="move">
+  <label for="ms">new start</label>
+  <input id="ms" type="datetime-local">
+  <label for="me">new end</label>
+  <input id="me" type="datetime-local">
+  <div class="stack"><button id="moveGo" class="warn">move the hours</button></div>
+</div>
+
+<div id="ask">
+  <div class="q">was this the work?</div>
+  <div class="t" id="askTitle"></div>
+  <div class="row">
+    <button id="askYes" class="primary">yes</button>
+    <button id="askNo" class="warn">no</button>
+  </div>
+</div>
+
+<div id="note"></div>
+
+<script>
+(() => {
+  "use strict";
+  let state = null, question = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  async function api(path, method = "GET", body) {
+    const options = { method, cache: "no-store" };
+    if (body !== undefined) {
+      options.headers = { "Content-Type": "application/json" };
+      options.body = JSON.stringify(body);
+    }
+    const response = await fetch(path, options);
+    if (!response.ok) throw new Error(path + " -> " + response.status);
+    return response.status === 204 ? null : response.json();
+  }
+
+  const fmt = (m) => (m < 60 ? m + "m" : (m / 60).toFixed(1) + "h");
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  async function refresh() {
+    state = await api("/api/state");
+    $("banked").textContent = fmt(state.banked_minutes);
+    $("gone").textContent = fmt(state.gone_minutes);
+    $("passes").textContent = state.passes_remaining;
+
+    const block = state.current_block;
+    $("blockName").textContent = block ? block.commitment_id : "nothing scheduled";
+    $("blockWhen").textContent = block
+      ? clock(block.planned_start) + " – " + clock(block.planned_end) + "   ·   " + block.state
+      : "—";
+
+    const live = !!block;
+    $("startBtn").disabled = !live || block.state === "running";
+    $("doneBtn").disabled = !live || block.state !== "running";
+    $("moveBtn").disabled = !live;
+    $("passBtn").disabled = !live || state.passes_remaining < 1;
+
+    $("alert").classList.toggle("on", state.rung > 0);
+    if (state.rung > 0) {
+      $("alertWhat").textContent = state.message || "";
+      $("alertDo").textContent = state.next_action || "";
+    }
+
+    const pending = await api("/api/questions");
+    question = pending[0] || null;
+    $("ask").classList.toggle("on", !!question);
+    if (question) $("askTitle").textContent = question.title;
+
+    $("note").textContent = state.silenced
+      ? "sick mode is on; nothing will escalate"
+      : (state.integrity !== null ? "integrity today: " + state.integrity : "");
+  }
+
+  const wrap = (fn) => async () => {
+    try { await fn(); await refresh(); }
+    catch (err) { $("note").textContent = String(err.message || err); }
+  };
+
+  $("startBtn").onclick = wrap(() => api("/api/block/" + state.current_block.id + "/start", "POST"));
+  $("doneBtn").onclick  = wrap(() => api("/api/block/" + state.current_block.id + "/complete", "POST"));
+  $("passBtn").onclick  = wrap(() => api("/api/pass", "POST", { block_id: state.current_block.id }));
+  $("sickBtn").onclick  = wrap(() => api("/api/sick", "POST", { hours: 24 }));
+
+  $("moveBtn").onclick = () => $("move").classList.toggle("on");
+  $("moveGo").onclick = wrap(async () => {
+    if (!$("ms").value || !$("me").value) throw new Error("a move needs a destination");
+    await api("/api/block/" + state.current_block.id + "/move", "POST",
+              { new_start: $("ms").value, new_end: $("me").value });
+    $("move").classList.remove("on");
+  });
+
+  $("askYes").onclick = wrap(() => api("/api/questions/" + question.id, "POST", { klass: "aligned" }));
+  $("askNo").onclick  = wrap(() => api("/api/questions/" + question.id, "POST", { klass: "drift" }));
+
+  refresh();
+  setInterval(refresh, 15000);
+})();
+</script>

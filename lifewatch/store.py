@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -64,22 +65,39 @@ class Store:
         self.path = Path(path)
         self.clock = clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path))
+
+        # The sensor loop runs in its own thread while uvicorn serves requests
+        # from a thread pool, so this connection is genuinely shared. SQLite's
+        # default same-thread guard would raise the moment the wall view read a
+        # row the sensors had written, which is every fifteen seconds.
+        #
+        # check_same_thread=False alone would be reckless; the lock below is
+        # what actually makes it safe, and WAL lets a reader proceed while a
+        # writer holds the file rather than returning "database is locked".
+        self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(SCHEMA)
-        self._conn.commit()
+        self._lock = threading.RLock()
+        with self._lock:
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.executescript(SCHEMA)
+            self._conn.commit()
 
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     # -- observations -----------------------------------------------------
 
     def append(self, obs: Observation) -> None:
-        self._conn.execute(
-            "INSERT INTO observations (ts, sensor, kind, value, meta) VALUES (?,?,?,?,?)",
-            (obs.ts.isoformat(), obs.sensor, obs.kind, obs.value, json.dumps(obs.meta)),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO observations (ts, sensor, kind, value, meta) "
+                "VALUES (?,?,?,?,?)",
+                (obs.ts.isoformat(), obs.sensor, obs.kind, obs.value,
+                 json.dumps(obs.meta)),
+            )
+            self._conn.commit()
 
     def observations(
         self, start: datetime, end: datetime, sensor: str | None = None
@@ -90,14 +108,16 @@ class Store:
             sql += " AND sensor = ?"
             args.append(sensor)
         sql += " ORDER BY ts ASC, id ASC"
-        return [self._row_to_observation(r) for r in self._conn.execute(sql, args)]
+        with self._lock:
+            return [self._row_to_observation(r) for r in self._conn.execute(sql, args)]
 
     def latest(self, sensor: str, kind: str) -> Observation | None:
-        row = self._conn.execute(
-            "SELECT * FROM observations WHERE sensor = ? AND kind = ? "
-            "ORDER BY ts DESC, id DESC LIMIT 1",
-            (sensor, kind),
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM observations WHERE sensor = ? AND kind = ? "
+                "ORDER BY ts DESC, id DESC LIMIT 1",
+                (sensor, kind),
+            ).fetchone()
         return self._row_to_observation(row) if row else None
 
     @staticmethod
@@ -113,17 +133,20 @@ class Store:
     # -- intervals --------------------------------------------------------
 
     def put_interval(self, iv: Interval) -> None:
-        self._conn.execute(
-            "INSERT INTO intervals (start, end, klass, tier, reason) VALUES (?,?,?,?,?)",
-            (iv.start.isoformat(), iv.end.isoformat(), iv.klass.value, iv.tier, iv.reason),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO intervals (start, end, klass, tier, reason) VALUES (?,?,?,?,?)",
+                (iv.start.isoformat(), iv.end.isoformat(), iv.klass.value, iv.tier,
+                 iv.reason),
+            )
+            self._conn.commit()
 
     def intervals(self, start: datetime, end: datetime) -> list[Interval]:
-        rows = self._conn.execute(
-            "SELECT * FROM intervals WHERE start >= ? AND start <= ? ORDER BY start ASC",
-            (start.isoformat(), end.isoformat()),
-        )
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM intervals WHERE start >= ? AND start <= ? ORDER BY start ASC",
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
         return [
             Interval(
                 start=datetime.fromisoformat(r["start"]),
