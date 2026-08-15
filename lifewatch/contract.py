@@ -32,6 +32,13 @@ from lifewatch.config import Config
 from lifewatch.models import Block, BlockState
 
 
+# A block in one of these has already reached an outcome; a pass cannot change
+# what already happened to it.
+_SETTLED_BLOCK_STATES = frozenset(
+    {BlockState.COMPLETED, BlockState.MOVED, BlockState.EXCUSED}
+)
+
+
 class Contract:
     """The declared commitments and the exceptions that may be taken against them.
 
@@ -236,11 +243,20 @@ class Contract:
         used = len(self._passes_used.get(self._week_key(now), ()))
         return max(0, self.config.passes_per_week - used)
 
-    def use_pass(self, now: datetime) -> bool:
-        """Spend one pass. Returns False when the week's allowance is gone.
+    def use_pass(self, now: datetime, block_id: str | None = None) -> bool:
+        """Spend one pass, optionally excusing a named block.
 
-        Refusal is a return value rather than an exception because running out
-        of passes is an ordinary Tuesday, not an error.
+        Returns False when the week's allowance is gone. Refusal is a return
+        value rather than an exception because running out of passes is an
+        ordinary Tuesday, not an error.
+
+        The allowance is counted per ISO week, which is right: it refills weekly.
+        But whether a *block* was excused must be recorded on the block, not
+        inferred from the week. A block can straddle the week boundary, and
+        inferring left a real hole: a pass spent at 23:30 on Sunday was invisible
+        at 00:15 on Monday, so the watcher escalated on a block the user had
+        already, legitimately, bought out of. That is precisely the wrongful
+        interruption that gets an instrument like this uninstalled.
         """
         with self._lock:
             key = self._week_key(now)
@@ -248,6 +264,9 @@ class Contract:
             if len(spent) >= self.config.passes_per_week:
                 return False
             spent.append(now)
+            block = self._blocks.get(block_id) if block_id else None
+            if block is not None and block.state not in _SETTLED_BLOCK_STATES:
+                block.state = BlockState.EXCUSED
             return True
 
     def passes_used_at(self, now: datetime) -> list[datetime]:
