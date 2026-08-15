@@ -1,0 +1,68 @@
+# lifewatch example configuration.
+#
+# Copy nothing from here by hand. Run the wizard:
+#
+#     make run          # first launch opens setup automatically
+#
+# Places are learned from wherever the machine actually is when you press
+# "I am here now". No network name is shipped, because a shipped value is a
+# value that gets committed by accident.
+
+pack: school
+
+places:
+  home:
+    matcher_type: ssid
+    matcher_value: CHANGE-ME-RUN-THE-WIZARD
+  campus:
+    matcher_type: ssid
+    matcher_value: CHANGE-ME-RUN-THE-WIZARD
+
+# Time at these places is accounted for: it is neither studied nor wasted.
+accounted_places:
+  - campus
+
+commitments:
+  - id: COURSE-101
+    label: Example Course
+    weekly_target_minutes: 600
+    # Fields below are supplied by the `school` pack.
+    section: "001"
+    instructor: Example Instructor
+    meetings:
+      - day: monday
+        start: "10:00"
+        end: "11:15"
+
+# How hard this is allowed to push, and how fast.
+# Rungs 3 (light) and 4 (call) are stage 2 and are not shipped yet.
+ladder:
+  - rung: 1
+    after_minutes: 0
+    effector: wall
+    requires_response: false
+  - rung: 2
+    after_minutes: 5
+    effector: notify
+    requires_response: false
+
+# A finite, visible escape hatch. Unlimited means there is no system;
+# zero means you break the system instead of using it.
+passes_per_week: 1
+
+# How long without input before you are counted as away from the machine.
+idle_threshold_s: 900
+
+classifier:
+  # Tier 2 reads raw window titles, so it stays on this machine.
+  # A 3B-class model is sufficient and will not heat the laptop you study on.
+  backend: local
+  endpoint: http://127.0.0.1:11434
+  model: CHANGE-ME-A-3B-CLASS-MODEL
+
+# Push transport for rung 2. Any HTTP endpoint that accepts a POST body.
+notify_url: null
+
+# Why you are doing this. Shown on the wall.
+# Yours, in your words. Leave empty if you would rather not see it.
+consequence_chain: []
