@@ -1,0 +1,24 @@
+# Personal configuration never enters this repository.
+# The engine holds no domain knowledge and no user data; see docs spec section 15.
+config/
+*.local.yaml
+*.local.yml
+
+# Local state
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
