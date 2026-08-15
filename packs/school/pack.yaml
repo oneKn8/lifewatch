@@ -1,0 +1,77 @@
+# The school pack.
+#
+# The engine knows nothing about courses. This file is where "a commitment has a
+# course code, a section, an instructor, and meets at these times" is written
+# down, as data the wizard can render and the config can hold.
+#
+# Every value below is an example. Real course codes, real sections and real
+# instructors are collected at runtime and written to the gitignored config,
+# never here. A pack that shipped somebody's timetable would be somebody's
+# timetable in a public repository.
+
+name: school
+label: School
+description: >-
+  Courses, their meeting times, and the grade arithmetic that answers the only
+  question that changes behaviour: what is still needed on what is left.
+
+# Fields the wizard collects for each commitment, on top of the engine's own
+# id, label and weekly target. `key` is what lands in the config.
+commitment_fields:
+  - key: course_code
+    label: Course code
+    type: string
+    required: true
+    example: COURSE-101
+  - key: section
+    label: Section
+    type: string
+    required: false
+    example: "001"
+  - key: instructor
+    label: Instructor
+    type: string
+    required: false
+    example: Example Instructor
+  - key: meetings
+    label: Meeting times
+    type: list
+    required: false
+    # Times are quoted because unquoted HH:MM is a sexagesimal integer in
+    # YAML 1.1, and "10:00" would load as the number 600.
+    example:
+      - day: monday
+        start: "10:00"
+        end: "11:15"
+
+# The grade model exists because the institution's gradebook updates too slowly
+# to change anything. Each item carries a weight and a score; `score` stays null
+# until the item is graded, and an ungraded item is what `grade_needed` solves
+# for.
+grade_model:
+  item_fields:
+    - key: name
+      label: Item
+      type: string
+      example: Exam 1
+    - key: weight
+      label: Weight
+      type: number
+      example: 0.25
+    - key: score
+      label: Score
+      type: number
+      required: false
+      example: null
+  # grade_needed is allowed to answer above 1.0. A target that cannot be reached
+  # is a fact worth saying out loud, and clamping it to 1.0 would be a lie that
+  # keeps someone working toward an outcome that is already gone.
+  allow_unreachable_answer: true
+
+# On a place tagged `campus`, the gaps between meetings are the prime blocks:
+# already on site, already in the mode, nothing to travel to.
+campus_mode:
+  place_tag: campus
+  # Below this, a gap is a passing period between back-to-back classes, not a
+  # study block. Surfacing it would train the user to ignore the suggestion.
+  min_gap_minutes: 30
