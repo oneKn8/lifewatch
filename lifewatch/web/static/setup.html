@@ -1,0 +1,338 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>lifewatch setup</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0E0D0B">
+<!--
+  Setup.
+
+  Run once, on the machine that will do the watching, standing in the places
+  being named. That last part is the point: a place is learned by being in it
+  and pressing a button, so no network name can ever be typed into source.
+
+  Same visual language as the phone view, with more room to explain, because
+  this is the one screen where the user is deciding how hard to be pushed and
+  deserves to understand what they are choosing.
+-->
+<style>
+  :root {
+    --ground: #0E0D0B;
+    --raised: #191713;
+    --ink:    #F4F1EA;
+    --dim:    #8A837A;
+    --gone:   #D22B2B;
+    --keep:   #6FA36B;
+    --rule:   #2A2621;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: "Inter", "Roboto", system-ui, "Segoe UI", Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+    padding: 26px 20px calc(40px + env(safe-area-inset-bottom));
+    max-width: 720px; margin: 0 auto; line-height: 1.5;
+  }
+  h1 { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase;
+       color: var(--dim); font-weight: 700; }
+  .lede { font-size: 15px; color: var(--dim); margin: 8px 0 26px; max-width: 56ch; }
+
+  section { border: 1px solid var(--rule); background: var(--raised);
+            padding: 18px; margin-bottom: 14px; }
+  section.done { border-color: #2F4A2C; }
+  h2 { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+       color: var(--dim); font-weight: 700; display: flex; justify-content: space-between; }
+  h2 .tick { color: var(--keep); }
+  .why { font-size: 14px; color: var(--dim); margin: 8px 0 14px; }
+
+  label { display: block; font-size: 11px; letter-spacing: 0.16em;
+          text-transform: uppercase; color: var(--dim); margin: 12px 0 4px; }
+  input, select, textarea {
+    font: inherit; width: 100%; padding: 11px 12px; background: var(--ground);
+    color: var(--ink); border: 1px solid var(--rule);
+  }
+  textarea { min-height: 76px; resize: vertical; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  button { font: inherit; font-weight: 700; color: var(--ink); background: var(--ground);
+           border: 1px solid var(--rule); padding: 13px 16px; cursor: pointer;
+           font-size: 15px; letter-spacing: 0.03em; }
+  button:active { background: #23201B; }
+  button.primary { background: var(--keep); color: #0E0D0B; border-color: var(--keep); }
+  button.small { padding: 8px 12px; font-size: 13px; }
+  button[disabled] { opacity: 0.35; cursor: default; }
+  .actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { border: 1px solid var(--rule); padding: 7px 11px; font-size: 13px;
+          display: flex; gap: 9px; align-items: center; }
+  .chip b { font-weight: 700; }
+  .chip .v { color: var(--dim); }
+  .chip button { border: 0; background: none; color: var(--gone); padding: 0 2px;
+                 font-size: 15px; line-height: 1; }
+
+  .net { font-size: 14px; margin-top: 10px; }
+  .net b { color: var(--ink); }
+  .net.offline { color: var(--gone); }
+
+  .rung { display: grid; grid-template-columns: 44px 1fr 96px; gap: 10px;
+          align-items: center; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+  .rung:last-child { border-bottom: 0; }
+  .rung .n { font-size: 21px; font-weight: 800; color: var(--dim); }
+  .rung .what { font-size: 14px; }
+  .rung .what small { display: block; color: var(--dim); font-size: 12px; }
+  .rung input { padding: 8px; text-align: right; }
+
+  #problems { border: 1px solid var(--gone); padding: 14px; margin-bottom: 14px; display: none; }
+  #problems.on { display: block; }
+  #problems h3 { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+                 color: var(--gone); margin-bottom: 8px; }
+  #problems li { font-size: 14px; margin-left: 18px; }
+
+  #done { display: none; border: 1px solid var(--keep); padding: 20px; }
+  #done.on { display: block; }
+  #done h2 { color: var(--keep); }
+  #done code { display: block; margin-top: 10px; font-size: 13px; color: var(--dim);
+               word-break: break-all; }
+  .note { font-size: 13px; color: var(--dim); margin-top: 10px; }
+</style>
+
+<h1>lifewatch setup</h1>
+<p class="lede">
+  Run this on the machine that will do the watching, and run the places step
+  while you are standing in each place. Nothing you type here goes near the
+  source tree; it is written to one gitignored file that only you can read.
+</p>
+
+<div id="problems"><h3>not finished yet</h3><ul id="problemlist"></ul></div>
+
+<section id="s-places">
+  <h2>1 · places <span class="tick" id="t-places"></span></h2>
+  <p class="why">
+    A place is learned, never typed. Press the button while you are actually
+    there and it captures whatever network is visible, so no network name can
+    be hardcoded, shipped, or committed by accident.
+  </p>
+  <div class="net" id="net">checking the network…</div>
+  <label for="placename">name this place</label>
+  <div class="grid2">
+    <input id="placename" placeholder="home" autocomplete="off">
+    <button id="learn" class="primary">I am here now — capture it</button>
+  </div>
+  <div class="chips" id="places"></div>
+  <label for="accounted">places where time is accounted for, not lost (comma separated)</label>
+  <input id="accounted" placeholder="campus" autocomplete="off">
+</section>
+
+<section id="s-commitments">
+  <h2>2 · commitments <span class="tick" id="t-commitments"></span></h2>
+  <p class="why">
+    What you are promising to do, and how many hours a week you are promising
+    it. The target is the contract; individual blocks are just where it lands.
+  </p>
+  <div class="grid2">
+    <div><label for="cid">id</label><input id="cid" placeholder="COURSE-101" autocomplete="off"></div>
+    <div><label for="clabel">label</label><input id="clabel" placeholder="Example Course" autocomplete="off"></div>
+  </div>
+  <label for="chours">hours per week</label>
+  <input id="chours" type="number" min="1" step="0.5" value="6">
+  <div id="packfields"></div>
+  <div class="actions"><button id="addc">add commitment</button></div>
+  <div class="chips" id="commitments"></div>
+</section>
+
+<section id="s-ladder">
+  <h2>3 · how hard it pushes <span class="tick" id="t-ladder"></span></h2>
+  <p class="why">
+    Minutes after a block should have started, with nothing running. Each rung
+    exists because the one before it can be ignored: a screen can be not looked
+    at, a notification can be swiped. Rungs 3 and 4 arrive in stage 2.
+  </p>
+  <div id="rungs">
+    <div class="rung">
+      <div class="n">1</div>
+      <div class="what">the wall turns red<small>passive — you have to look at it</small></div>
+      <input type="number" min="0" value="0" data-rung="1" data-effector="wall">
+    </div>
+    <div class="rung">
+      <div class="n">2</div>
+      <div class="what">phone notification<small>swipeable, which is why there is a rung 3</small></div>
+      <input type="number" min="0" value="5" data-rung="2" data-effector="notify">
+    </div>
+  </div>
+  <label for="notify">push endpoint for rung 2 (optional, leave blank to skip)</label>
+  <input id="notify" placeholder="https://ntfy.sh/your-private-topic" autocomplete="off">
+  <label for="passes">no-questions-asked passes per week</label>
+  <input id="passes" type="number" min="0" max="7" value="1">
+  <p class="note">
+    Zero means you break the system instead of using it. Unlimited means there
+    is no system. One is the honest number for most people.
+  </p>
+</section>
+
+<section id="s-why">
+  <h2>4 · why you are doing this <span class="tick" id="t-why"></span></h2>
+  <p class="why">
+    Shown on the wall, in your words, one step per line. Optional — leave it
+    empty if seeing it would do more harm than good. You know which you are.
+  </p>
+  <textarea id="chain" placeholder="hours not spent&#10;grade at risk&#10;the thing you actually want, further away"></textarea>
+</section>
+
+<div class="actions">
+  <button id="finish" class="primary">write the config</button>
+</div>
+
+<section id="done">
+  <h2>set up</h2>
+  <p class="why">Config written. Restart with <b>make run</b> and it starts watching.</p>
+  <code id="wrote"></code>
+</section>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  let packFields = [];
+
+  async function api(path, method = "GET", body) {
+    const opts = { method, cache: "no-store" };
+    if (body !== undefined) {
+      opts.headers = { "Content-Type": "application/json" };
+      opts.body = JSON.stringify(body);
+    }
+    const res = await fetch(path, opts);
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) throw new Error(data && data.detail ? data.detail : path + " " + res.status);
+    return data;
+  }
+
+  function renderPackFields() {
+    const host = $("packfields");
+    host.innerHTML = "";
+    for (const field of packFields) {
+      const label = document.createElement("label");
+      label.textContent = field.label + (field.required ? "" : " (optional)");
+      label.htmlFor = "pf-" + field.key;
+      const input = document.createElement("input");
+      input.id = "pf-" + field.key;
+      input.placeholder = field.example || "";
+      input.autocomplete = "off";
+      host.appendChild(label);
+      host.appendChild(input);
+    }
+  }
+
+  function chip(text, value, onRemove) {
+    const el = document.createElement("div");
+    el.className = "chip";
+    const b = document.createElement("b"); b.textContent = text;
+    const v = document.createElement("span"); v.className = "v"; v.textContent = value;
+    el.appendChild(b); el.appendChild(v);
+    if (onRemove) {
+      const x = document.createElement("button");
+      x.textContent = "×"; x.onclick = onRemove;
+      el.appendChild(x);
+    }
+    return el;
+  }
+
+  async function refresh() {
+    const s = await api("/api/setup/state");
+    packFields = s.pack_fields || [];
+    if (!$("packfields").children.length) renderPackFields();
+
+    const net = $("net");
+    if (s.visible_network) {
+      net.className = "net";
+      net.innerHTML = "visible network right now: <b>" + s.visible_network + "</b>";
+      $("learn").disabled = false;
+    } else {
+      net.className = "net offline";
+      net.textContent = "no network visible — a place learned now would match everywhere, so this is blocked";
+      $("learn").disabled = true;
+    }
+
+    const places = $("places"); places.innerHTML = "";
+    for (const [name, value] of Object.entries(s.places || {})) {
+      places.appendChild(chip(name, value));
+    }
+    $("t-places").textContent = Object.keys(s.places || {}).length ? "✓" : "";
+    $("s-places").classList.toggle("done", Object.keys(s.places || {}).length > 0);
+
+    const list = $("commitments"); list.innerHTML = "";
+    for (const c of s.commitments || []) {
+      list.appendChild(chip(c.id, (c.weekly_target_minutes / 60).toFixed(1) + "h/wk",
+        async () => { await api("/api/setup/commitment/" + encodeURIComponent(c.id), "DELETE"); refresh(); }));
+    }
+    $("t-commitments").textContent = (s.commitments || []).length ? "✓" : "";
+    $("s-commitments").classList.toggle("done", (s.commitments || []).length > 0);
+
+    const problems = s.problems || [];
+    $("problems").classList.toggle("on", problems.length > 0);
+    $("problemlist").innerHTML = "";
+    for (const p of problems) {
+      const li = document.createElement("li"); li.textContent = p;
+      $("problemlist").appendChild(li);
+    }
+    if (s.written) {
+      $("done").classList.add("on");
+      $("wrote").textContent = s.written;
+    }
+  }
+
+  const guard = (fn) => async () => {
+    try { await fn(); await refresh(); }
+    catch (err) {
+      $("problems").classList.add("on");
+      $("problemlist").innerHTML = "<li>" + (err.message || err) + "</li>";
+    }
+  };
+
+  $("learn").onclick = guard(async () => {
+    const name = $("placename").value.trim();
+    if (!name) throw new Error("give the place a name first");
+    await api("/api/setup/place", "POST", { name });
+    $("placename").value = "";
+  });
+
+  $("addc").onclick = guard(async () => {
+    const fields = {};
+    for (const field of packFields) {
+      const value = ($("pf-" + field.key) || {}).value;
+      if (value && value.trim()) fields[field.key] = value.trim();
+    }
+    await api("/api/setup/commitment", "POST", {
+      id: $("cid").value.trim(),
+      label: $("clabel").value.trim(),
+      weekly_target_minutes: Math.round(parseFloat($("chours").value || "0") * 60),
+      fields,
+    });
+    $("cid").value = ""; $("clabel").value = "";
+    for (const field of packFields) { const el = $("pf-" + field.key); if (el) el.value = ""; }
+  });
+
+  $("finish").onclick = guard(async () => {
+    const rungs = [...document.querySelectorAll("#rungs input")].map((input) => ({
+      rung: Number(input.dataset.rung),
+      after_minutes: Number(input.value || 0),
+      effector: input.dataset.effector,
+    }));
+    await api("/api/setup/ladder", "POST", { rungs });
+
+    const chain = $("chain").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    const accounted = $("accounted").value.split(",").map((s) => s.trim()).filter(Boolean);
+    await api("/api/setup/settings", "POST", {
+      passes_per_week: Number($("passes").value || 0),
+      accounted_places: accounted,
+      consequence_chain: chain,
+      notify_url: $("notify").value.trim() || null,
+    });
+
+    await api("/api/setup/finish", "POST");
+  });
+
+  refresh();
+  setInterval(refresh, 10000);
+})();
+</script>

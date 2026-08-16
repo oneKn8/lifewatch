@@ -21,6 +21,13 @@ dev = ["pytest>=8.0"]
 [tool.setuptools.packages.find]
 include = ["lifewatch*", "packs*"]
 
+# A pack is data as much as it is code, and the views are entirely data. Without
+# these a wheel installs and then fails at runtime looking for pack.yaml, which
+# is the worst shape of bug: it passes every test run from a source checkout.
+[tool.setuptools.package-data]
+"packs.school" = ["*.yaml"]
+"lifewatch.web" = ["static/*.html", "static/*.css", "static/*.js"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

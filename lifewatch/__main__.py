@@ -67,11 +67,21 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     if not args.config.exists():
-        raise SystemExit(
-            f"no config at {args.config}\n"
-            "Run the wizard first; it collects your places and commitments at "
-            "runtime so none of them ever end up in the source tree."
+        # First run serves setup instead of refusing to start. Telling someone
+        # to "run the wizard first" and then having no wizard to run is how a
+        # tool ships unusable; the missing config IS the instruction.
+        from lifewatch.web.setup import create_setup_app
+
+        logger.info("no config at %s", args.config)
+        logger.info("setup http://%s:%s/", args.host, args.port)
+        logger.info("run the places step while you are actually in each place")
+        uvicorn.run(
+            create_setup_app(args.config),
+            host=args.host,
+            port=args.port,
+            log_level="warning",
         )
+        return
 
     config = Config.load(args.config)
     clock = SystemClock()

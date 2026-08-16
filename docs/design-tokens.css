@@ -1,0 +1,51 @@
+/* Instrument — the shared language of lifewatch's three views.
+ *
+ * Written for a 2011 720p television with a tired backlight, read from across
+ * a dark room by someone who did not choose to look at it. Every rule below is
+ * downstream of that sentence.
+ */
+
+:root {
+  --ground:    #000000;  /* pure black; anything lighter is a lamp at night */
+  --surface:   #191713;  /* raised, phone only; the wall has no containers   */
+  --ink:       #F4F1EA;  /* bone, warm rather than clinical                  */
+  --dim:       #8A837A;  /* labels only, never a number that matters         */
+  --lost:      #D22B2B;  /* RESERVED: time that is gone. Never decoration.   */
+  --kept:      #6FA36B;  /* affirmative controls only                        */
+  --accounted: #55504A;  /* spoken for: class, work, sleep                   */
+  --pending:   #14120F;  /* not yet reached                                  */
+  --rule:      #2A2621;
+
+  --wall-stat:  96px;
+  --wall-label: 21px;
+  --wall-body:  23px;
+  --phone-stat: 30px;
+  --phone-body: 16px;
+  --micro:      11px;    /* absolute floor, phone labels only                */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: Inter, Roboto, system-ui, "Segoe UI", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;   /* numbers must not jitter as they tick */
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+/* Radius is zero everywhere. A rounded corner reads as a card, a card reads as
+   an app, and this is a panel. */
+.surface { background: var(--surface); border: 1px solid var(--rule); }
+
+.label {
+  font-size: var(--wall-label);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.stat { font-size: var(--wall-stat); font-weight: 800; letter-spacing: -0.03em; line-height: 0.92; }
+.stat .unit { font-size: 0.42em; color: var(--dim); }
+.stat.lost { color: var(--lost); }
